@@ -6,15 +6,10 @@ main(int argc, char *argv[]) {
   int pid;
   int pipes1[2], pipes2[2];
   char buf[] = {'a'};
-  if (pipe(pipes1) < 0 || pipe(pipes2) < 0) {
-    fprintf(2, "pipe sys call fails\n");
-    exit(1);
-  }
+  pipe(pipes1);
+  pipe(pipes2);
+
   int ret = fork();
-  if (ret < 0) {
-    fprintf(2, "fork sys call fails\n");
-    exit(1);
-  }
 
   // parent send in pipes1[1], child receives in pipes1[0]
   // child send in pipes2[1], parent receives in pipes2[0]
