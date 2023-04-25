@@ -1,8 +1,7 @@
 #include "kernel/types.h"
 #include "user/user.h"
 
-int
-main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   int pid;
   int pipes1[2], pipes2[2];
   char buf[] = {'a'};
@@ -13,7 +12,8 @@ main(int argc, char *argv[]) {
 
   // parent send in pipes1[1], child receives in pipes1[0]
   // child send in pipes2[1], parent receives in pipes2[0]
-  // should have checked close & read & write return value for error, but i am lazy
+  // should have checked close & read & write return value for error, but i am
+  // lazy
   if (ret == 0) {
     // i am the child
     pid = getpid();

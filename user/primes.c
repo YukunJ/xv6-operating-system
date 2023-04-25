@@ -5,8 +5,7 @@
  * Run as a prime-number processor
  * the listenfd is from your left neighbor
  */
-void
-runprocess(int listenfd) {
+void runprocess(int listenfd) {
   int my_num = 0;
   int forked = 0;
   int passed_num = 0;
@@ -54,8 +53,7 @@ runprocess(int listenfd) {
   }
 }
 
-int
-main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   int pipes[2];
   pipe(pipes);
   for (int i = 2; i <= 35; i++) {
