@@ -35,7 +35,11 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
-  $K/virtio_disk.o
+  $K/virtio_disk.o \
+
+ifeq ($(LAB),pgtbl)
+OBJS += $K/vmcopyin.o
+endif
 
 ifeq ($(LAB),pgtbl)
 OBJS += \
@@ -175,6 +179,13 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_sleep\
+	$U/_pingpong\
+	$U/_primes\
+	$U/_find\
+	$U/_xargs\
+	$U/_trace\
+	$U/_sysinfotest\
 
 
 
@@ -188,6 +199,7 @@ ifeq ($(LAB),traps)
 UPROGS += \
 	$U/_call\
 	$U/_bttest
+
 endif
 
 ifeq ($(LAB),lazy)
