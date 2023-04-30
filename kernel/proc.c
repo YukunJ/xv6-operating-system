@@ -18,7 +18,6 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
-
 extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
@@ -121,6 +120,22 @@ found:
     return 0;
   }
 
+  // Allocate the per-process kernel page table
+  p->kpagetable = ukvminit();
+  if(p->kpagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // remap the kernel stack page per process
+  // physical address is already allocated in procinit()
+  uint64 va = KSTACK((int) (p - proc));
+  pte_t pa = kvmpa(va);
+  memset((void *)pa, 0, PGSIZE);
+  ukvmmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -152,6 +167,13 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  if (p->kpagetable) {
+    freeprockvm(p);
+    p->kpagetable = 0;
+  }
+  if (p->kstack) {
+    p->kstack = 0;
+  }
 }
 
 // Create a user page table for a given process,
@@ -478,10 +500,13 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        kvminithart();
         c->proc = 0;
 
         found = 1;

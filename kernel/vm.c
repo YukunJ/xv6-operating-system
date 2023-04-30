@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -471,4 +473,95 @@ void vmprint_helper(pagetable_t pagetable, int depth) {
 void vmprint(pagetable_t pagetable) {
   printf("page table %p\n", pagetable);
   vmprint_helper(pagetable, 1);
+}
+
+// add a mapping to the per-process kernel page table.
+void
+ukvmmap(pagetable_t kpagetable, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(kpagetable, va, sz, pa, perm) != 0)
+    panic("ukvmmap");
+}
+
+
+/*
+ * create a direct-map page table for the per-process kernel page table.
+ * return nullptr when kalloc fails
+ */
+pagetable_t
+ukvminit()
+{
+  pagetable_t kpagetable = (pagetable_t) kalloc();
+  if (kpagetable == 0) {
+    return kpagetable;
+  }
+
+  memset(kpagetable, 0, PGSIZE);
+
+  // uart registers
+  ukvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  ukvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  ukvmmap(kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  ukvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  ukvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  ukvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  ukvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return kpagetable;
+}
+
+// Unmap the leaf node mapping
+// of the per-process kernel page table
+// so that we could call freewalk on that
+void
+ukvmunmap(pagetable_t pagetable, uint64 va, uint64 npages)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("ukvmunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      goto clean;
+    if((*pte & PTE_V) == 0)
+      goto clean;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("ukvmunmap: not a leaf");
+
+    clean:
+      *pte = 0;
+  }
+}
+
+// helper function to first free all leaf mapping
+// of a per-process kernel table but do not free the physical address
+// and then remove all 3-levels indirection and the physical address
+// for this kernel page itself
+void freeprockvm(struct proc* p) {
+  pagetable_t kpagetable = p->kpagetable;
+  // reverse order of allocation
+  ukvmunmap(kpagetable, p->kstack, PGSIZE/PGSIZE);
+  ukvmunmap(kpagetable, TRAMPOLINE, PGSIZE/PGSIZE);
+  ukvmunmap(kpagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE);
+  ukvmunmap(kpagetable, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE);
+  ukvmunmap(kpagetable, PLIC, 0x400000/PGSIZE);
+  ukvmunmap(kpagetable, CLINT, 0x10000/PGSIZE);
+  ukvmunmap(kpagetable, VIRTIO0, PGSIZE/PGSIZE);
+  ukvmunmap(kpagetable, UART0, PGSIZE/PGSIZE);
+  freewalk(kpagetable);
 }
