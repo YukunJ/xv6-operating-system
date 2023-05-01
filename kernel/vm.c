@@ -49,6 +49,12 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+// refresh the TLB to refer the page as virtual memory mapping table
+void ukvminithard(pagetable_t page) {
+  w_satp(MAKE_SATP(page));
+  sfence_vma();
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
@@ -141,6 +147,25 @@ kvmpa(uint64 va)
     panic("kvmpa");
   pa = PTE2PA(*pte);
   return pa+off;
+}
+
+// Same as mappages without panic on remapping
+int umappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm) {
+  uint64 a, last;
+  pte_t *pte;
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+  for(;;){
+    if((pte = walk(pagetable, a, 1)) == 0)
+      return -1;
+    *pte = PA2PTE(pa) | perm | PTE_V;
+    if(a == last)
+      break;
+    a += PGSIZE;
+    pa += PGSIZE;
+  }
+  return 0;
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
@@ -271,6 +296,25 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   return newsz;
 }
 
+// Recursively free page-table pages similar to freewalk
+// not need to already free leaf node
+void
+ufreewalk(pagetable_t pagetable)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      ufreewalk((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+    pagetable[i] = 0;
+  }
+  kfree((void*)pagetable);
+}
+
 // Recursively free page-table pages.
 // All leaf mappings must already have been removed.
 void
@@ -299,6 +343,34 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
+}
+
+// copying from old page to new page from
+// begin in old page to new in old page
+// and mask off PTE_U bit
+int
+pagecopy(pagetable_t oldpage, pagetable_t newpage, uint64 begin, uint64 end) {
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+  begin = PGROUNDUP(begin);
+
+  for (i = begin; i < end; i += PGSIZE) {
+    if ((pte = walk(oldpage, i, 0)) == 0)
+      panic("pagecopy walk oldpage nullptr");
+    if ((*pte & PTE_V) == 0)
+      panic("pagecopy oldpage pte not valid");
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte) & (~PTE_U);
+    if (umappages(newpage, i, PGSIZE, pa, flags) != 0) {
+      goto err;
+    }
+  }
+  return 0;
+
+err:
+  uvmunmap(newpage, 0, i / PGSIZE, 1);
+  return -1;
 }
 
 // Given a parent process's page table, copy
@@ -381,23 +453,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -407,40 +463,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 // Recursive helper
@@ -563,5 +586,5 @@ void freeprockvm(struct proc* p) {
   ukvmunmap(kpagetable, CLINT, 0x10000/PGSIZE);
   ukvmunmap(kpagetable, VIRTIO0, PGSIZE/PGSIZE);
   ukvmunmap(kpagetable, UART0, PGSIZE/PGSIZE);
-  freewalk(kpagetable);
+  ufreewalk(kpagetable);
 }
