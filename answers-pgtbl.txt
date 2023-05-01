@@ -1,0 +1,1 @@
+process 1 should be the shell running. Not sure at this moment what process 2 and 3 might be running upon booting

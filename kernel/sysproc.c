@@ -5,6 +5,7 @@
 #include "param.h"
 #include "memlayout.h"
 #include "spinlock.h"
+#include "sysinfo.h"
 #include "proc.h"
 
 uint64
@@ -94,4 +95,32 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// click the sys call number in p->tracemask
+// so as to tracing its calling afterwards
+uint64
+sys_trace(void) {
+  int trace_sys_mask;
+  if (argint(0, &trace_sys_mask) < 0)
+    return -1;
+  myproc()->tracemask |= trace_sys_mask;
+  return 0;
+}
+
+// collect system info
+uint64
+sys_sysinfo(void) {
+  struct proc *my_proc = myproc();
+  uint64 p;
+  if(argaddr(0, &p) < 0)
+    return -1;
+  // construct in kernel first
+  struct sysinfo s;
+  s.freemem = kfreemem();
+  s.nproc = count_free_proc();
+  // copy to user space
+  if(copyout(my_proc->pagetable, p, (char *)&s, sizeof(s)) < 0)
+    return -1;
+  return 0;
 }
