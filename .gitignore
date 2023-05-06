@@ -22,3 +22,5 @@ xv6.out*
 submissions/
 ph
 barrier
+.DS_Store
+.idea/

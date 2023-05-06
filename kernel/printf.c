@@ -122,6 +122,7 @@ panic(char *s)
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
@@ -132,3 +133,21 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void backtrace(void)
+{
+  printf("backtrace:\n");
+  // 1. retrieve the current function call's stack frame pointer
+  uint64 curr_fp = r_fp();
+  uint64 page_bottom = PGROUNDDOWN(curr_fp);
+  while (page_bottom < curr_fp) {
+    // 2. retrieve the return address and prev call stack frame pointer
+    uint64 ret = *(pte_t *)(curr_fp - 0x8);
+    uint64 prev_fp = *(pte_t *)(curr_fp - 0x10);
+    // 3. print the return address
+    printf("%p\n", ret);
+    // 4. jump to prev stack frame
+    curr_fp = prev_fp;
+  }
+}
+

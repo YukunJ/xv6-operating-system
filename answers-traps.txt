@@ -1,0 +1,55 @@
+1. Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+
+000000000000001c <main>:
+
+void main(void) {
+  1c:	1141                	addi	sp,sp,-16
+  1e:	e406                	sd	ra,8(sp)
+  20:	e022                	sd	s0,0(sp)
+  22:	0800                	addi	s0,sp,16
+  printf("%d %d\n", f(8)+1, 13);
+  24:	4635                	li	a2,13
+  26:	45b1                	li	a1,12
+  28:	00000517          	auipc	a0,0x0
+  2c:	7b050513          	addi	a0,a0,1968 # 7d8 <malloc+0xe8>
+  30:	00000097          	auipc	ra,0x0
+  34:	608080e7          	jalr	1544(ra) # 638 <printf>
+  exit(0);
+  38:	4501                	li	a0,0
+  3a:	00000097          	auipc	ra,0x0
+  3e:	274080e7          	jalr	628(ra) # 2ae <exit>
+
+  We can see register a2 holds 13.
+
+2. Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+   The whole call chain to f(g(8))+1 is directly optimized by compiler to calculate the answer=12 and put in register a1
+   26:	45b1                	li	a1,12
+
+3. At what address is the function printf located?
+    0000000000000638 <printf>: so printf is located at this address
+
+4. What value is in the register ra just after the jalr to printf in main?
+    jalr will place the next instruction address into ra, which is 0x34+4 = 0x38
+
+5. Run the following code.
+
+   	unsigned int i = 0x00646c72;
+   	printf("H%x Wo%s", 57616, &i);
+
+   What is the output? Here's an ASCII table that maps bytes to characters.
+   The output depends on that fact that the RISC-V is little-endian.
+   If the RISC-V were instead big-endian what would you set i to in order to yield the same output? Would you need to change 57616 to a different value?
+
+   The output is HE110 World
+   For 57616, its hex is 0x0000E110.
+   For i=0x00646c72, its byte-by-byte translation is 0dlr. Because of little-endian, it's placed backward as rld.
+   If RISC-V is big-endian, we don't need t change 57616 to other value. We need want to change i
+   to a value whose direct byte-by-byte translation is 0xrld0, which is 0x726c6400
+
+6. In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+
+   	printf("x=%d y=%d", 3);
+
+   	Whatever is left in the a2 register.
+
+
