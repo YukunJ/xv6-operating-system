@@ -125,3 +125,32 @@ sys_sysinfo(void) {
     return -1;
   return 0;
 }
+
+// set an alarm to call the handler function
+// every period ticks
+uint64
+sys_sigalarm(void) {
+  struct proc *my_proc = myproc();
+  int period;
+  if (argint(0, &period) < 0)
+    return -1;
+  uint64 p;
+  if(argaddr(1, &p) < 0)
+    return -1;
+  my_proc->alarm_period = period;
+  my_proc->alarm_handler = (void (*)()) p;
+  my_proc->ticks_since_last_alarm = 0;
+  my_proc->inalarm = 0;
+  return 0;
+}
+
+uint64
+sys_sigreturn(void) {
+  struct proc* p = myproc();
+  if (p->inalarm) {
+    p->inalarm = 0;
+    *p->trapframe = *p->alarmframe;
+    p->ticks_since_last_alarm = 0;
+  }
+  return 0;
+}

@@ -36,7 +36,7 @@ trapinithart(void)
 void
 usertrap(void)
 {
-  int which_dev = 0;
+  int which_dev = devintr();
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -77,8 +77,17 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2) {
+      p->ticks_since_last_alarm += 1;
+      if (p->inalarm == 0 && p->alarm_period != 0 && p->ticks_since_last_alarm == p->alarm_period) {
+        p->inalarm = 1;
+        *p->alarmframe = *p->trapframe;
+        // save all the trapframe to alarmframe for later restore
+        // jump to the alarm handler when returning back to user space
+        p->trapframe->epc = (uint64)p->alarm_handler;
+      }
+      yield();
+  }
 
   usertrapret();
 }
@@ -108,7 +117,6 @@ usertrapret(void)
 
   // set up the registers that trampoline.S's sret will use
   // to get to user space.
-  
   // set S Previous Privilege mode to User.
   unsigned long x = r_sstatus();
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
