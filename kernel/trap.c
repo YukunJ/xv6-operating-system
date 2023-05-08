@@ -67,6 +67,28 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 13 || r_scause() == 15) {
+    // 13 is read page fault, 15 is write page fault
+    // printf("page fault trap: signal %d at address %p\n", r_scause(), r_stval());
+    uint64 va = PGROUNDDOWN(r_stval()); // beginning of a 4KB page
+    uint64 pa = (uint64) kalloc();
+    if (pa == 0) {
+      p->killed = 1;
+    } else {
+      memset((void *)pa, 0, PGSIZE);
+      if (umappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+        kfree((void *)pa);
+        p->killed = 1;
+      }
+      if (p->killed == 0) {
+        if (umappages(p->kpagetable, va, PGSIZE, pa, PTE_W | PTE_X | PTE_R) !=
+            0) {
+          kfree((void *)pa);
+          uvmunmap(p->pagetable, va, 1, 0);
+          p->killed = 1;
+        }
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -90,6 +112,7 @@ usertrap(void)
   }
 
   usertrapret();
+  return;
 }
 
 //

@@ -208,9 +208,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue; // do not panic on walk because of lazy allocation
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue; // do not panic on unmap because of lazy allocation
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -342,7 +342,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 {
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
-  freewalk(pagetable);
+  ufreewalk(pagetable);
 }
 
 // copying from old page to new page from
@@ -357,9 +357,11 @@ pagecopy(pagetable_t oldpage, pagetable_t newpage, uint64 begin, uint64 end) {
 
   for (i = begin; i < end; i += PGSIZE) {
     if ((pte = walk(oldpage, i, 0)) == 0)
-      panic("pagecopy walk oldpage nullptr");
+      continue;
+//      panic("pagecopy walk oldpage nullptr");
     if ((*pte & PTE_V) == 0)
-      panic("pagecopy oldpage pte not valid");
+      continue;
+//      panic("pagecopy oldpage pte not valid");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte) & (~PTE_U);
     if (umappages(newpage, i, PGSIZE, pa, flags) != 0) {
@@ -389,9 +391,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
+//      panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
+//      panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
