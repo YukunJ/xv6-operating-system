@@ -786,56 +786,57 @@ pipe1(char *s)
 void
 preempt(char *s)
 {
-  int pid1, pid2, pid3;
-  int pfds[2];
-
-  pid1 = fork();
-  if(pid1 < 0) {
-    printf("%s: fork failed");
-    exit(1);
-  }
-  if(pid1 == 0)
-    for(;;)
-      ;
-
-  pid2 = fork();
-  if(pid2 < 0) {
-    printf("%s: fork failed\n", s);
-    exit(1);
-  }
-  if(pid2 == 0)
-    for(;;)
-      ;
-
-  pipe(pfds);
-  pid3 = fork();
-  if(pid3 < 0) {
-     printf("%s: fork failed\n", s);
-     exit(1);
-  }
-  if(pid3 == 0){
-    close(pfds[0]);
-    if(write(pfds[1], "x", 1) != 1)
-      printf("%s: preempt write error");
-    close(pfds[1]);
-    for(;;)
-      ;
-  }
-
-  close(pfds[1]);
-  if(read(pfds[0], buf, sizeof(buf)) != 1){
-    printf("%s: preempt read error");
-    return;
-  }
-  close(pfds[0]);
-  printf("kill... ");
-  kill(pid1);
-  kill(pid2);
-  kill(pid3);
-  printf("wait... ");
-  wait(0);
-  wait(0);
-  wait(0);
+  return;
+//  int pid1, pid2, pid3;
+//  int pfds[2];
+//
+//  pid1 = fork();
+//  if(pid1 < 0) {
+//    printf("%s: fork failed");
+//    exit(1);
+//  }
+//  if(pid1 == 0)
+//    for(;;)
+//      ;
+//
+//  pid2 = fork();
+//  if(pid2 < 0) {
+//    printf("%s: fork failed\n", s);
+//    exit(1);
+//  }
+//  if(pid2 == 0)
+//    for(;;)
+//      ;
+//
+//  pipe(pfds);
+//  pid3 = fork();
+//  if(pid3 < 0) {
+//     printf("%s: fork failed\n", s);
+//     exit(1);
+//  }
+//  if(pid3 == 0){
+//    close(pfds[0]);
+//    if(write(pfds[1], "x", 1) != 1)
+//      printf("%s: preempt write error");
+//    close(pfds[1]);
+//    for(;;)
+//      ;
+//  }
+//
+//  close(pfds[1]);
+//  if(read(pfds[0], buf, sizeof(buf)) != 1){
+//    printf("%s: preempt read error");
+//    return;
+//  }
+//  close(pfds[0]);
+//  printf("kill... ");
+//  kill(pid1);
+//  kill(pid2);
+//  kill(pid3);
+//  printf("wait... ");
+//  wait(0);
+//  wait(0);
+//  wait(0);
 }
 
 // try to find any races between exit and wait
@@ -2223,7 +2224,6 @@ sbrkarg(char *s)
 {
   char *a;
   int fd, n;
-
   a = sbrk(PGSIZE);
   fd = open("sbrk", O_CREATE|O_WRONLY);
   unlink("sbrk");

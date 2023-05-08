@@ -104,7 +104,6 @@ walkaddr(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
   uint64 pa;
-
   if(va >= MAXVA)
     return 0;
 
@@ -436,6 +435,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    lazyvalidate(myproc(), va0);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -591,4 +591,34 @@ void freeprockvm(struct proc* p) {
   ukvmunmap(kpagetable, VIRTIO0, PGSIZE/PGSIZE);
   ukvmunmap(kpagetable, UART0, PGSIZE/PGSIZE);
   ufreewalk(kpagetable);
+}
+
+// validate and potentially allocate physical page
+// for a process's virtual address
+// return 0 on OK, -1 if any error
+int lazyvalidate(struct proc* p, uint64 va) {
+  if (va > p->sz || va < p->trapframe->sp) {
+      // invalid address
+      return -1;
+  }
+  if (walkaddr(p->pagetable, va) != 0) {
+      return 0; // already mapped
+  }
+  va = PGROUNDDOWN(va); // beginning of a 4KB page
+  uint64 pa = (uint64) kalloc();
+  if (pa == 0) {
+    return -1;
+  }
+  memset((void *)pa, 0, PGSIZE);
+  if (umappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+    kfree((void *)pa);
+    return -1;
+  }
+
+  if (umappages(p->kpagetable, va, PGSIZE, pa, PTE_W | PTE_X | PTE_R) != 0) {
+    kfree((void *)pa);
+    uvmunmap(p->pagetable, va, 1, 0);
+    return -1;
+  }
+  return 0;
 }

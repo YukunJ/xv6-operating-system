@@ -135,7 +135,6 @@ int
 filewrite(struct file *f, uint64 addr, int n)
 {
   int r, ret = 0;
-
   if(f->writable == 0)
     return -1;
 
