@@ -190,11 +190,11 @@ int             copyin_new(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             copyinstr_new(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t);
-void            ukvmmap(pagetable_t kpagetable, uint64 va, uint64 pa, uint64 sz, int perm);
+void            ukvmmap(pagetable_t, uint64, uint64, uint64 sz, int);
 pagetable_t     ukvminit();
-void            ukvmunmap(pagetable_t pagetable, uint64 va, uint64 npages);
-void            freeprockvm(struct proc* p);
-
+void            ukvmunmap(pagetable_t, uint64, uint64);
+void            freeprockvm(struct proc*);
+int             lazyvalidate(struct proc*, uint64);
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
