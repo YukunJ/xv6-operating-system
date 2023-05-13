@@ -1,0 +1,7 @@
+Why are there missing keys with 2 threads, but not with 1 thread? Identify a sequence of events with 2 threads that can lead to a key being missing.
+
+For example, consider 2 threads are concurrently adding a [4, 'd'] & [5, 'e'] pair into the same bucket respectively:
+the bucket is originally [<1, 'a'>, <2, 'b'>, <3, 'c'>]
+in put() function, they both iterate to the end of the linked list
+and decided to insert at the back of <3, 'c'>
+whoever execute the line '*p = e' will have the other side's changed overwritten and thus lost.
