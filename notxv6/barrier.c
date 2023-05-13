@@ -6,12 +6,14 @@
 
 static int nthread = 1;
 static int round = 0;
+static __thread int thread_flag = 0;  // local sense
 
 struct barrier {
   pthread_mutex_t barrier_mutex;
   pthread_cond_t barrier_cond;
   int nthread;      // Number of threads that have reached this round of the barrier
-  int round;     // Barrier round
+  int round;        // Barrier round
+  int flag;         // sense reversal
 } bstate;
 
 static void
@@ -19,7 +21,9 @@ barrier_init(void)
 {
   assert(pthread_mutex_init(&bstate.barrier_mutex, NULL) == 0);
   assert(pthread_cond_init(&bstate.barrier_cond, NULL) == 0);
+  bstate.round = 0;
   bstate.nthread = 0;
+  bstate.flag = 0;
 }
 
 static void 
@@ -30,7 +34,25 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
-  
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  thread_flag= !thread_flag;
+  // wait until all previous round threads has exited the barrier
+  while (thread_flag == bstate.flag) {
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+  int arrived = ++bstate.nthread;
+  if (arrived == nthread) {
+    // I am the last thread in this round
+    // need to flip the round flag
+    bstate.round++;
+    bstate.flag = !bstate.flag;
+    bstate.nthread = 0;
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  } else {
+    // wait for other threads
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *
