@@ -27,9 +27,7 @@ void
 kinit()
 {
   for (int i = 0; i < NCPU; i++) {
-    char name[9] = {0};
-    snprintf(name, 8, "kmem-%d", i);
-    initlock(&kmem[i].lock, name);
+    initlock(&kmem[i].lock, "kmem");
   }
   freerange(end, (void*)PHYSTOP);
 }
