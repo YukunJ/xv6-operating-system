@@ -42,26 +42,12 @@ hash(uint blockno)
 void
 binit(void)
 {
-//  struct buf *b;
-
   for (int i = 0; i < BUCKETSIZE; i++) {
     initlock(&bcachebucket[i].lock, "bcachebucket");
     for (int j = 0; j < BUFFERSIZE; j++) {
       initsleeplock(&bcachebucket[i].buf[j].lock, "buffer");
     }
   }
-//  initlock(&bcache.lock, "bcache");
-//
-//  // Create linked list of buffers
-//  bcache.head.prev = &bcache.head;
-//  bcache.head.next = &bcache.head;
-//  for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-//    b->next = bcache.head.next;
-//    b->prev = &bcache.head;
-//    initsleeplock(&b->lock, "buffer");
-//    bcache.head.next->prev = b;
-//    bcache.head.next = b;
-//  }
 }
 
 // Look through buffer cache for block on device dev.
@@ -78,10 +64,10 @@ bget(uint dev, uint blockno)
   for (int i = 0; i < BUFFERSIZE; i++) {
     b = &bcachebucket[bucket].buf[i];
     if (b->dev == dev && b->blockno == blockno) {
-      acquiresleep(&b->lock);
       b->refcnt++;
       b->lastuse = ticks;
       release(&bcachebucket[bucket].lock);
+      acquiresleep(&b->lock);
       // --- end of critical session
       return b;
     }
@@ -108,8 +94,8 @@ bget(uint dev, uint blockno)
   b->lastuse = ticks;
   b->valid = 0;
   b->refcnt = 1;
-  acquiresleep(&b->lock);
   release(&bcachebucket[bucket].lock);
+  acquiresleep(&b->lock);
   // --- end of critical session
   return b;
 
