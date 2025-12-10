@@ -52,9 +52,9 @@ struct backcmd {
 int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
-void runcmd(struct cmd *cmd);
 
 // Execute cmd.  Never returns.
+void
 void runcmd(struct cmd *cmd)
 {
   int p[2];
