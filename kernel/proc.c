@@ -106,7 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-  p->tracemask = 0 ;//新建进程的时候 初始化参数
+  
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -127,7 +127,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  p->tracemask = 0 ;//新建进程的时候 初始化参数
   return p;
 }
 

@@ -131,6 +131,32 @@ static uint64 (*syscalls[])(void) = {
 [SYS_trace]   sys_trace,
 };
 
+static char *sysnames[] = {
+  "",
+"fork",
+"exit",
+"wait",
+"pipe",
+"read",
+"kill",
+"exec",
+"fstat",
+"chdir", 
+"dup",
+"getpid",
+"sbrk",
+"sleep",
+"uptime",
+"open",
+"write",
+"mknod",
+"unlink",
+"link",
+"mkdir",
+"close",
+"trace",
+};
+
 void
 syscall(void)
 {
@@ -143,7 +169,7 @@ syscall(void)
 
     // 添加 trace的业务逻辑
     if (p->tracemask & (1 << num)){
-      printf("%d:syscall %s -> %d\n", p->pid, p->name, p->trapframe->a0);
+      printf("%d: syscall %s -> %d\n", p->pid, sysnames[num], p->trapframe->a0);
     }
 
   } else {

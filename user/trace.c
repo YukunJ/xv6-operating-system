@@ -23,7 +23,6 @@ main(int argc, char *argv[])
   //例如shell中命令是 trace 2147483647 grep hello README
   //把grep hello README 保存到 nargv 数组 当中
 
-
   for(i = 2; i < argc && i < MAXARG; i++){
     nargv[i-2] = argv[i];
   }

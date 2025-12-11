@@ -104,5 +104,5 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  int tracemask;               //用来进行 筛选 trace函数的输出内容的
+  uint64 tracemask;               //用来进行 筛选 trace函数的输出内容的
 };
