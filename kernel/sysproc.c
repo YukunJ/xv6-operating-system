@@ -95,3 +95,15 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+//sys_trace将参数保存到proc结构体
+uint64
+sys_trace()
+{
+  int mask;
+  if(argint(0,&mask)<0)
+    return -1;
+   myproc()->tracemask=mask;
+  return 0; 
+}

@@ -106,6 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->tracemask = 0 ;//新建进程的时候 初始化参数
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -276,6 +277,8 @@ fork(void)
   np->sz = p->sz;
 
   np->parent = p;
+
+  np->tracemask = p->tracemask;//fork创建新的进程的时候　传递参数
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
