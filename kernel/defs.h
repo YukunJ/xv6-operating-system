@@ -160,6 +160,13 @@ int             uartgetc(void);
 // vm.c
 void            kvminit(void);
 void            kvminithart(void);
+
+pagetable_t     kvminitPreproc();//给每个proc都分配一个kernel pagetable
+void            kvmmapPreproc(uint64, uint64, uint64, int, pagetable_t);
+void            kvmUnmapPreproc(pagetable_t, uint64, uint64);
+void            freePreProcKernelPageTable(struct proc *p);
+void            vmprint(pagetable_t pagetable, int depth);
+
 uint64          kvmpa(uint64);
 void            kvmmap(uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);

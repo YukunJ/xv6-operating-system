@@ -5,7 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -47,6 +47,65 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+/*
+  为 每个进程都create a direct-map page table
+
+  1、kernel_pagetable_pre_proc是一个数结构（翻译地址的机制） 里边存储的是pagetable page，其实体位于ram中 
+  2、此段函数的 作用是仿照全局kernel pagetable 把一些硬件的地址直接映射过去
+  3、关于全局kernel pagetable中 将va转译pa 是在proc.c procinit(仅仅开机时候 运行一次) 26行下 通过循环机制 将64个进程都 翻译地址一遍
+  4、那每一个进程的kernel pagetable则是在proc.c allocproc中 通过调用kvmmapPreproc 实现 (每次分配proc的时候 都会将 将用户端的kstack中存储的va 与 ram中真实的物理地址 之间建立映射表格)
+  
+*/
+
+pagetable_t
+kvminitPreproc()
+{
+  pagetable_t kernel_pagetable_pre_proc;
+  kernel_pagetable_pre_proc = (pagetable_t) kalloc();
+  memset(kernel_pagetable_pre_proc, 0, PGSIZE);
+
+  // uart registers
+  kvmmapPreproc(UART0, UART0, PGSIZE, PTE_R | PTE_W,kernel_pagetable_pre_proc);
+  // virtio mmio disk interface
+  kvmmapPreproc(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W,kernel_pagetable_pre_proc);
+  // CLINT
+  kvmmapPreproc(CLINT, CLINT, 0x10000, PTE_R | PTE_W,kernel_pagetable_pre_proc);
+  // PLIC
+  kvmmapPreproc(PLIC, PLIC, 0x400000, PTE_R | PTE_W,kernel_pagetable_pre_proc);
+  // map kernel text executable and read-only.
+  kvmmapPreproc(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X,kernel_pagetable_pre_proc);
+  // map kernel data and the physical RAM we'll make use of.
+  kvmmapPreproc((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W,kernel_pagetable_pre_proc);
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  kvmmapPreproc(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X,kernel_pagetable_pre_proc);
+
+  return kernel_pagetable_pre_proc;
+}
+
+// Forward declaration to avoid implicit declaration when called earlier.
+void kvmUnmapPreproc(pagetable_t p, uint64 va, uint64 npages);
+void freewalkPreporc(pagetable_t pagetable);
+
+
+void
+freePreProcKernelPageTable(struct proc *p)
+{
+  pagetable_t kpt = p->kernel_pagetable_perproc;
+  // Unmap in reverse order of kvmmapPreproc() to avoid transient issues.
+  kvmUnmapPreproc(kpt,p->kstack,PGSIZE/PGSIZE);
+  kvmUnmapPreproc(kpt, TRAMPOLINE, PGSIZE/PGSIZE);
+  kvmUnmapPreproc(kpt, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE);
+  kvmUnmapPreproc(kpt, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE);
+  kvmUnmapPreproc(kpt, PLIC, 0x400000/PGSIZE);
+  kvmUnmapPreproc(kpt, CLINT, 0x10000/PGSIZE);
+  kvmUnmapPreproc(kpt, VIRTIO0, PGSIZE/PGSIZE);
+  kvmUnmapPreproc(kpt, UART0, PGSIZE/PGSIZE);
+  // Free the page table pages.
+  freewalkPreporc(kpt);
+
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
@@ -55,6 +114,40 @@ kvminithart()
   w_satp(MAKE_SATP(kernel_pagetable));
   sfence_vma();
 }
+
+// Print a page table to console.打印的是第一个进程的VA 到 PA之间的映射关系６
+void
+vmprint(pagetable_t pagetable, int depth)
+{
+  if(depth==1){
+    // 打印当前页表的地址
+  printf("page table %p\n", pagetable);
+  }
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){   // 有效项
+
+      printf(".");
+      for(int d = 0; d < depth-1; d++)
+        printf(". .");
+      printf(".");
+
+      printf("%d: pte %p ", i, pte);
+
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0){
+        // 这是一个指向下一级页表的 PTE
+        uint64 child = PTE2PA(pte);
+        printf("pa %p\n",child);
+        vmprint((pagetable_t)child, depth+1);  // 递归打印子页表
+      } else {
+        // 这是一个叶子页表项，直接打印物理地址
+        uint64 pa = PTE2PA(pte);
+        printf("pa %p\n", (void*)pa);
+      }
+    }
+  }
+}
+
 
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
@@ -73,6 +166,11 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
     panic("walk");
+
+  if(pagetable == 0){
+    printf("walk: pagetable NULL, va %p\n", va);
+    panic("walk: null pagetable");
+  }
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -119,6 +217,16 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
+}
+
+
+
+// add a mapping to the pre process's kernel page table.
+void
+kvmmapPreproc(uint64 va, uint64 pa, uint64 sz, int perm,pagetable_t p)
+{
+  if(mappages(p, va, sz, pa, perm) != 0)
+    panic("kvmmapPreproc");
 }
 
 // translate a kernel virtual address to
@@ -170,6 +278,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+/// @param pagetable 要取消映射的页表
+/// @param va 要取消映射的虚拟地址
+/// @param npages 要取消映射的页数
+/// @param do_free 是否释放对应的物理内存
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -191,6 +303,32 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       kfree((void*)pa);
     }
     *pte = 0;
+  }
+}
+
+/// @brief 给每个进程的kernel pagetable 取消映射
+/// @param p 每个进程的kernel pagetable（就是原先全局一张kernel pagetable的副本）
+/// @param va map的虚拟地址 要根据他才能确定 谁是要取消映射的对象
+/// @param npages 要取消映射的页数
+void
+kvmUnmapPreproc(pagetable_t p,uint64 va,uint64 npages){
+
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(p, a, 0)) == 0)
+      goto clean;
+    if((*pte & PTE_V) == 0)
+      goto clean;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+
+    clean:
+      *pte = 0;
   }
 }
 
@@ -277,6 +415,8 @@ freewalk(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
+    //pte & PTE_V 判断该PTE是否有效
+    //pte & (PTE_R|PTE_W|PTE_X) 判断该PTE是否是叶子节点 如果又RWX权限的话 就是指向物理页的叶子节点
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
@@ -288,6 +428,27 @@ freewalk(pagetable_t pagetable)
   }
   kfree((void*)pagetable);
 }
+
+
+/// @brief 递归释放进程的kernel pagetable的副本的三级页表页 （副本指向的leaf 物理页 不能释放 这块是内核资源）（用户进程只是映射 却删除不了）
+/// @param pagetable 进程的kernel pagetable的副本（不能填上 进程的pagetable）
+void
+freewalkPreporc(pagetable_t pagetable){
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    //pte & PTE_V 判断该PTE是否有效
+    
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      freewalk((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
+}
+
 
 // Free user memory pages,
 // then free page-table pages.

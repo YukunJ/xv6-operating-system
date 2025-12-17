@@ -113,9 +113,17 @@ found:
     return 0;
   }
 
-  // An empty user page table.
+  // // An empty user page table.
+  // 给用户进程 分配 用户页表（不是kernel page table）
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  p->kernel_pagetable_perproc=kvminitPreproc();
+  if(p->kernel_pagetable_perproc == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -126,6 +134,14 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  //获取内核态的KSTACK[i]的va
+  uint64 va = KSTACK((int) (p - proc));
+  //通过va解算出来的在ram中真实的物理地址
+  pte_t pa = kvmpa(va);
+  //将用户端的kstack中存储的va 与 ram中真实的物理地址 之间建立映射表格
+  kvmmapPreproc(va,(uint64)pa,PGSIZE,PTE_R | PTE_W,p->kernel_pagetable_perproc);
+  p->kstack =va;
 
   return p;
 }
@@ -150,6 +166,15 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  //释放进程自己的kernel pagetable
+  if (p->kernel_pagetable_perproc){
+    freePreProcKernelPageTable(p);
+    p->kernel_pagetable_perproc = 0;
+  }
+  if(p->kstack){
+    p->kstack = 0;
+  }
 }
 
 // Create a user page table for a given process,
@@ -197,6 +222,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 
 // a user program that calls exec("/init")
 // od -t xC initcode
+// initcode是使用汇编语言编写的一个非常小的程序
 uchar initcode[] = {
   0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
   0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
@@ -218,6 +244,7 @@ userinit(void)
   
   // allocate one user page and copy init's instructions
   // and data into it.
+  // 把initcode加载到第一个进程的用户内存中 
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
@@ -473,14 +500,23 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        //切换到进程自己的内核页表
+        w_satp(MAKE_SATP(p->kernel_pagetable_perproc));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
-        c->proc = 0;
 
+        //此处再切换回内核的页表
+        kvminithart();
+
+        c->proc = 0;
         found = 1;
       }
+
       release(&p->lock);
     }
 #if !defined (LAB_FS)
