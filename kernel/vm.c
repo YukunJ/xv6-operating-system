@@ -5,7 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -170,6 +170,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+/// @param pagetable 要取消映射的页表
+/// @param va 要取消映射的虚拟地址
+/// @param npages 要取消映射的页数
+/// @param do_free 是否释放对应的物理内存
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -191,6 +195,32 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       kfree((void*)pa);
     }
     *pte = 0;
+  }
+}
+
+/// @brief 给每个进程的kernel pagetable 取消映射
+/// @param p 每个进程的kernel pagetable（就是原先全局一张kernel pagetable的副本）
+/// @param va map的虚拟地址 要根据他才能确定 谁是要取消映射的对象
+/// @param npages 要取消映射的页数
+void
+kvmUnmapPreproc(pagetable_t p,uint64 va,uint64 npages){
+
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(p, a, 0)) == 0)
+      goto clean;
+    if((*pte & PTE_V) == 0)
+      goto clean;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+
+    clean:
+      *pte = 0;
   }
 }
 

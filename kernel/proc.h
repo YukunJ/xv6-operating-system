@@ -1,4 +1,5 @@
 // Saved registers for kernel context switches.
+#include "spinlock.h"
 struct context {
   uint64 ra;
   uint64 sp;
@@ -103,4 +104,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  //signal alarm
+  int alarm_period;            // the alarm period set
+  void (*alarm_handler)();     // the alarm function handler
+  int ticks_since_last_alarm;  // how many ticks has elapsed since last alarm
+  struct trapframe *backup_trapframe; //backup of trapframe before alarm
+  int inalarm;                  //flag of whether in alarm handler
+  
 };

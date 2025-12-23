@@ -12,6 +12,12 @@
 .globl trampoline
 trampoline:
 .align 4
+
+# 作用：导出全局符号 uservec。
+# 为什么需要全局：trap.c/trapinit() 会把 stvec（陷入入口寄存器）设置为 uservec 的地址
+# （准确说是在 trampoline 页里的那个入口地址），
+# 所以必须能从别的编译单元引用到这个符号。
+
 .globl uservec
 uservec:    
 	#
@@ -26,6 +32,9 @@ uservec:
         
 	# swap a0 and sscratch
         # so that a0 is TRAPFRAME
+        # csr(read and write) | 将 sscratch（控制状态寄存器） 的值读到 a0 寄存器中，并将 a0 寄存器的值写入 sscratch 寄存器
+        # a0 ← sscratch（a0 现在变成 trapframe 指针）
+        # sscratch ← 原来的 a0（把用户态的 a0 暂存到 sscratch，避免丢）
         csrrw a0, sscratch, a0
 
         # save the user registers in TRAPFRAME
@@ -61,21 +70,31 @@ uservec:
         sd t6, 280(a0)
 
 	# save the user a0 in p->trapframe->a0
-        csrr t0, sscratch
+        # csr(control and status register) r(read) | 将 sscratch（控制状态寄存器） 的值读到 t0 寄存器中
+        csrr t0, sscratch 
         sd t0, 112(a0)
 
         # restore kernel stack pointer from p->trapframe->kernel_sp
+        # load doubleword | 将 a0 偏移 8 字节处的值加载到 sp 寄存器中
+        # 内核栈顶
         ld sp, 8(a0)
 
         # make tp hold the current hartid, from p->trapframe->kernel_hartid
+        # 当前 hart id（多核用）
         ld tp, 32(a0)
 
         # load the address of usertrap(), p->trapframe->kernel_trap
+        # C 入口函数地址（比如 usertrap）
         ld t0, 16(a0)
 
         # restore kernel page table from p->trapframe->kernel_satp
+        # 内核页表（satp 值）
         ld t1, 0(a0)
+
+        # csr(write) | 将 t1 寄存器的值写入 satp（地址空间标识符寄存器）
         csrw satp, t1
+
+        # flush TLB
         sfence.vma zero, zero
 
         # a0 is no longer valid, since the kernel page

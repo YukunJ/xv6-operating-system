@@ -132,3 +132,32 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  printf("backtrace:\n");
+
+  // 以“当前 fp 所在页”为本次回溯允许访问的栈页（典型 xv6：一页内核栈）
+  uint64 stack_bottom = PGROUNDDOWN(fp);
+  uint64 stack_top    = PGROUNDUP(fp);
+
+  while(fp >= stack_bottom && fp < stack_top){
+    // 1) 读取当前栈帧保存的返回地址（注意：偏移需与你的栈帧布局一致）
+    uint64 ra = *(uint64 *)(fp - 8);
+
+    // 2) 打印返回地址（用 %p 打印更稳妥）
+    printf("%p\n", (void *)ra);
+
+    // 3) 读取上一层的帧指针（注意：偏移需与你的栈帧布局一致）
+    uint64 prev_fp = *(uint64 *)(fp - 16);
+
+    // 4) 停止条件：链断/不再合理推进/越界
+    if(prev_fp <= fp)
+      break;
+
+    fp = prev_fp;
+  }
+}
+
